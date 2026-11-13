@@ -1,0 +1,73 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  // Deploy: `npx wrangler -c worker/wrangler.jsonc deploy`
+  // Keep `name`, `SeatCoordinator`, and the `v1` migration tag unchanged once deployed.
+  // SQLite Durable Objects (`new_sqlite_classes`) run on both the Cloudflare Workers Free and Paid plans.
+  "name": "my-app-activate",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-04",
+  // `workers_dev: true` also serves this Worker on `<name>.<subdomain>.workers.dev`. Firewall and rate-limiting
+  // rules of your own domain do not apply there (it is a separate zone). Set it to `false` when you rely on such
+  // rules and use a second custom domain as the failover endpoint. Turning it off does not turn off Preview or
+  // Version URLs; `preview_urls: false` below does.
+  "workers_dev": true,
+  "preview_urls": false,
+
+  // Optional custom domain:
+  // "routes": [
+  //   { "pattern": "activate.myapp.com", "custom_domain": true }
+  // ],
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "SEAT_DO", "class_name": "SeatCoordinator" }
+    ]
+  },
+
+  // Optional, off by default. Needs Wrangler 4.36.0 or later; `period` must be 10 or 60; limits are approximate and per Cloudflare location. Check the entry against the Cloudflare Rate Limiting binding documentation before you enable it.
+  // "ratelimits": [ { "name": "POST_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } } ],
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["SeatCoordinator"] }
+  ],
+
+  // Secrets (set via `npx wrangler -c worker/wrangler.jsonc secret put <NAME>`, or `worker/.dev.vars` locally):
+  //   ED25519_PKCS8_B64            : printed by `swift run license-tool --scheme MYAPP-V1 --init-keypair`
+  //   STRIPE_SECRET_KEY            : restricted `rk_live_...` key (Checkout Sessions, PaymentIntents, Charges, Disputes: Read)
+  //   STRIPE_ALLOWED_PAYMENT_LINKS : comma-separated `plink_...` IDs when sharing a Stripe account across products
+  //   RESEND_API_KEY               : optional Resend key (`re_...`) for `/thank-you` backup email and `action: "recover"`
+  //   SEAT_PEPPER                  : optional; stores HMAC-SHA256(pepper, seat code) instead of the seat code. Unset: seat
+  //                                  codes are stored as sent. Never change or remove it once set (every Mac would look new)
+  //   ADMIN_TOKEN                  : optional, at least 32 random characters; enables `action: "erase"` for
+  //                                  `license-tool --erase-key`. Unset or shorter: `erase` answers `501 erase_unconfigured`.
+  //                                  license-tool reads the same value from SEATSTAMP_ADMIN_TOKEN on your Mac, never argv
+  // Optional vars (add to "vars" below when needed):
+  //   ED25519_PUB_B64              : Base64 32-byte license public key; must match ED25519_PKCS8_B64 when both are set
+  //   ED25519_RETIRED_PUB_B64      : comma-separated Base64 32-byte public keys of retired license keys (first 4 used),
+  //                                  accepted only for `deactivate` after `license-tool --rotate-keypair`; unset: none
+  "vars": {
+    "TICKET_SCHEME": "MYAPP-V1",
+    "TICKET_PREFIX": "LK1-",
+    // Keep default "seatstamp-key-v1|" unless passing `--key-hash-domain` to `license-tool` as well.
+    "KEY_HASH_DOMAIN": "seatstamp-key-v1|",
+    "MAX_SEATS": "2",
+    // Seat releases (deactivations plus evictions) per purchase per rolling 365 days, 0 to 64.
+    // Unset or invalid: equal to MAX_SEATS. A release over the cap returns `429 release_limit`.
+    "SEAT_RELEASES_PER_YEAR": "2",
+    "THANK_YOU_WINDOW_SECONDS": "3600",
+    "EVICT_OLDEST_SEAT_AFTER_DAYS": "0",
+    "APP_NAME": "MyApp",
+    // "RECEIPT_FROM_EMAIL": "MyApp <keys@myapp.com>",
+    "APP_URL_SCHEME": "myapp"
+  },
+
+  // Keep observability off. With Workers Logs on, Cloudflare stores one log line per request with the method and the
+  // full URL, and the `/thank-you` URL contains the license key. If you must enable logs, keep `invocation_logs` false.
+  "observability": {
+    "enabled": false,
+    "logs": {
+      "enabled": false,
+      "invocation_logs": false
+    }
+  }
+}

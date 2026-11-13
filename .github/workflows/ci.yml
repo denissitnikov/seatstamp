@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  worker:
+    name: Cloudflare Worker and site (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+      - name: Run Worker and Durable Object tests
+        run: node --version && node --test worker/worker.test.mjs
+      - name: Check the walkthrough site against the real formats
+        run: node --test site/site.test.mjs
+
+  swift:
+    name: Swift SDK, CLI & Example (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build all Swift targets and run selftest
+        run: swift --version && swift build && swift run selftest
+      - name: Build example menu-bar app
+        run: swift build --package-path example

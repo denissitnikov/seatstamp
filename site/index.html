@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SeatStamp: Offline Licensing for Mac Apps</title>
+  <meta name="description" content="Offline Ed25519 licensing, 4-anchor monotonic trial, and signed updates for macOS apps sold outside the Mac App Store. Built on Swift, Cloudflare Workers + SQLite Durable Objects, and Stripe Checkout.">
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("seatstamp_theme");
+        var theme = saved || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand-group">
+        <a href="#top" class="wordmark">
+          <svg class="brand-mark" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <rect x="1.5" y="2.5" width="17" height="15" rx="3.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M6 10.25L8.6 12.85L14.2 7.25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="wordmark-text">SeatStamp</span>
+        </a>
+        <span class="badge badge-version">v1.0</span>
+        <span class="badge badge-mit">MIT</span>
+      </div>
+
+      <nav class="header-nav" aria-label="Primary">
+        <a href="#architecture" class="nav-link" data-nav-section="architecture">How It Works</a>
+        <a href="#inspector" class="nav-link" data-nav-section="inspector">Ticket Math</a>
+        <a href="#setup" class="nav-link" data-nav-section="setup">5-Step Setup</a>
+        <a href="#security" class="nav-link" data-nav-section="security">Security &amp; Privacy</a>
+        <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch color theme" title="Toggle Light / Dark theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="3.2" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M8 1.5V3M8 13V14.5M1.5 8H3M13 8H14.5M3.4 3.4L4.5 4.5M11.5 11.5L12.6 12.6M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M13.5 9.8A5.8 5.8 0 0 1 6.2 2.5a5.8 5.8 0 1 0 7.3 7.3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+          </svg>
+          <span class="theme-label" id="theme-label">Theme</span>
+        </button>
+        <a href="https://github.com/denissitnikov/seatstamp" class="btn btn-primary btn-sm" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Section 1: Hero -->
+    <section id="top" class="hero">
+      <div class="container hero-grid">
+        <div class="hero-inner">
+          <h1 class="hero-title">Offline Ed25519 licensing for Mac apps outside the App Store.</h1>
+          <p class="hero-subtitle">
+            Check Stripe when a Mac activates. Sign an Ed25519 ticket. Verify it offline on the Mac, forever.
+            No customer database, no webhooks, no phone-home.
+          </p>
+          <div class="hero-actions">
+            <a href="#architecture" class="btn btn-primary">Explore Interactive Architecture</a>
+            <a href="https://github.com/denissitnikov/seatstamp" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+          </div>
+          <ul class="fact-strip" aria-label="Core architecture facts">
+            <li class="fact-pill">Swift Package (macOS)</li>
+            <li class="fact-pill">Stripe Session ID = License Key</li>
+            <li class="fact-pill">Cloudflare Worker + SQLite DO</li>
+            <li class="fact-pill">No License Checks After Unlock</li>
+          </ul>
+        </div>
+
+        <!-- Plain-English Mental Model Card -->
+        <aside class="analogy-card" aria-label="How seatstamp replaces traditional licensing">
+          <div class="analogy-head">
+            <span class="analogy-kicker">The Passport-Stamp Model</span>
+            <span class="analogy-meta">Why no database is needed</span>
+          </div>
+          <div class="analogy-rows">
+            <div class="analogy-row">
+              <div class="analogy-label">License Key</div>
+              <div class="analogy-compare">
+                <span class="compare-old">Custom key generator + DB table</span>
+                <span class="compare-new"><strong>Stripe's own checkout ID</strong> (<code>cs_live_...</code>)</span>
+              </div>
+            </div>
+            <div class="analogy-row">
+              <div class="analogy-label">Activation</div>
+              <div class="analogy-compare">
+                <span class="compare-old">Webhooks + customer email lookup</span>
+                <span class="compare-new"><strong>Verify Stripe once on demand</strong>, stamp a signed <code>LK1-</code> pass</span>
+              </div>
+            </div>
+            <div class="analogy-row">
+              <div class="analogy-label">Every Launch</div>
+              <div class="analogy-compare">
+                <span class="compare-old">Phone-home check (breaks offline)</span>
+                <span class="compare-new"><strong>Offline signature check</strong>: works on a plane, forever</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Section 2: Interactive Architecture Schema -->
+    <section id="architecture" class="section section-arch">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">System Architecture</p>
+            <h2 class="section-title">End-to-end trust boundaries &amp; data flow</h2>
+          </div>
+          <p class="section-desc">
+            Pick a lifecycle flow to trace each step, or click any component box to inspect its secrets, storage, and failure rules.
+          </p>
+        </div>
+
+        <!-- 2.1 Flow Selector Tabs -->
+        <div class="flow-bar-sticky">
+          <div class="flow-tabs" role="tablist" aria-label="Architecture lifecycle flows">
+            <button type="button" role="tab" class="flow-tab" id="tab-all" data-flow="all" aria-selected="true" aria-controls="arch-panel">Overview</button>
+            <button type="button" role="tab" class="flow-tab" id="tab-buy" data-flow="buy" aria-selected="false" aria-controls="arch-panel">1. Buy &amp; Activate</button>
+            <button type="button" role="tab" class="flow-tab" id="tab-offline" data-flow="offline" aria-selected="false" aria-controls="arch-panel">2. Every Launch (Offline)</button>
+            <button type="button" role="tab" class="flow-tab" id="tab-update" data-flow="update" aria-selected="false" aria-controls="arch-panel">3. Updates &amp; Revoke</button>
+            <button type="button" role="tab" class="flow-tab" id="tab-move" data-flow="move" aria-selected="false" aria-controls="arch-panel">4. Move Mac</button>
+          </div>
+        </div>
+
+        <div id="arch-panel" role="tabpanel" aria-labelledby="tab-all" class="arch-panel">
+          <!-- Plain-English Flow Summary Banner -->
+          <div class="flow-banner" id="flow-banner" aria-live="polite">
+            <span class="flow-banner-badge" id="flow-banner-badge">Complete Map</span>
+            <p class="flow-banner-text" id="flow-banner-text">
+              Everything left of the dashed line runs offline inside the buyer's Mac. Everything right of it is only touched once at purchase, seat transfer, or weekly update check.
+            </p>
+          </div>
+
+          <!-- 2.2 Desktop SVG Schema (>= 768px) -->
+          <div class="diagram-desktop-wrap">
+            <svg id="arch-svg" class="arch-svg" viewBox="0 0 1160 568" role="img" aria-label="seatstamp 2.0 interactive architecture diagram">
+              <defs>
+                <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="var(--accent-blue)"/>
+                </marker>
+                <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="var(--accent-green)"/>
+                </marker>
+                <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="var(--accent-amber)"/>
+                </marker>
+                <marker id="arrow-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="var(--accent-violet)"/>
+                </marker>
+              </defs>
+
+              <!-- Column 1: USER'S MAC (OFFLINE TRUST ZONE) -->
+              <g class="svg-zone" data-node="zone-mac">
+                <rect x="20" y="76" width="296" height="468" rx="12" class="zone-box"/>
+                <text x="36" y="100" class="zone-label">USER'S MAC (OFFLINE TRUST ZONE)</text>
+              </g>
+
+              <!-- Network Boundary Line -->
+              <g class="svg-boundary" aria-hidden="true">
+                <line x1="384" y1="72" x2="384" y2="548" class="boundary-line"/>
+                <text x="384" y="62" text-anchor="middle" class="boundary-label">NETWORK BOUNDARY</text>
+              </g>
+
+              <!-- CONNECTIONS (Orthogonal, zero crossing lines, labels fit inside gaps) -->
+              <!-- 1. Top arc: Mac App -> Stripe (amber dashed), exits at x=272 clear of zone text -->
+              <g class="svg-edge edge-amber" data-edge="checkout">
+                <path d="M 272 118 L 272 36 L 992 36 L 992 114" class="edge-path edge-dashed" marker-end="url(#arrow-amber)"/>
+                <path d="M 272 118 L 272 36 L 992 36 L 992 114" class="edge-pulse"/>
+                <rect x="514" y="23" width="236" height="24" rx="5" class="edge-pill-bg"/>
+                <text x="632" y="39" text-anchor="middle" class="edge-label">Browser checkout with chk_ token</text>
+                <g class="edge-seq" data-seq-for="checkout" hidden>
+                  <circle cx="496" cy="35" r="10" class="seq-circle"/>
+                  <text x="496" y="39" text-anchor="middle" class="seq-text"></text>
+                </g>
+              </g>
+
+              <!-- 2. Upper horizontal: Mac App -> Worker (blue) -->
+              <g class="svg-edge edge-blue" data-edge="claim">
+                <path d="M 300 172 L 464 172" class="edge-path" marker-end="url(#arrow-blue)"/>
+                <path d="M 300 172 L 464 172" class="edge-pulse"/>
+                <rect x="302" y="140" width="164" height="22" rx="4" class="edge-pill-bg"/>
+                <text x="384" y="155" text-anchor="middle" class="edge-label">claim / activate / free</text>
+                <g class="edge-seq" data-seq-for="claim" hidden>
+                  <circle cx="384" cy="188" r="10" class="seq-circle"/>
+                  <text x="384" y="192" text-anchor="middle" class="seq-text"></text>
+                </g>
+              </g>
+
+              <!-- 3. Lower horizontal: Worker -> Mac App (green) -->
+              <g class="svg-edge edge-green" data-edge="ticket">
+                <path d="M 468 232 L 304 232" class="edge-path" marker-end="url(#arrow-green)"/>
+                <path d="M 468 232 L 304 232" class="edge-pulse"/>
+                <rect x="310" y="242" width="148" height="22" rx="4" class="edge-pill-bg"/>
+                <text x="384" y="257" text-anchor="middle" class="edge-label">signed LK1- ticket</text>
+                <g class="edge-seq" data-seq-for="ticket" hidden>
+                  <circle cx="384" cy="218" r="10" class="seq-circle"/>
+                  <text x="384" y="222" text-anchor="middle" class="seq-text"></text>
+                </g>
+              </g>
+
+              <!-- 4. Bidirectional horizontal: Worker <-> Stripe (amber) -->
+              <g class="svg-edge edge-amber" data-edge="stripe-check">
+                <path d="M 736 212 L 856 212" class="edge-path" marker-start="url(#arrow-amber)" marker-end="url(#arrow-amber)"/>
+                <path d="M 736 212 L 856 212" class="edge-pulse"/>
+                <rect x="750" y="182" width="92" height="22" rx="4" class="edge-pill-bg"/>
+                <text x="796" y="197" text-anchor="middle" class="edge-label">GET paid?</text>
+                <rect x="748" y="220" width="96" height="22" rx="4" class="edge-pill-bg"/>
+                <text x="796" y="235" text-anchor="middle" class="edge-label">no dispute</text>
+                <g class="edge-seq" data-seq-for="stripe-check" hidden>
+                  <circle cx="796" cy="166" r="10" class="seq-circle"/>
+                  <text x="796" y="170" text-anchor="middle" class="seq-text"></text>
+                </g>
+              </g>
+
+              <!-- 5. Orthogonal: Static Host -> Mac App (violet) -->
+              <g class="svg-edge edge-violet" data-edge="update-get">
+                <path d="M 468 418 L 364 418 L 364 290 L 304 290" class="edge-path" marker-end="url(#arrow-violet)"/>
+                <path d="M 468 418 L 364 418 L 364 290 L 304 290" class="edge-pulse"/>
+                <rect x="308" y="340" width="152" height="22" rx="4" class="edge-pill-bg"/>
+                <text x="384" y="355" text-anchor="middle" class="edge-label">weekly GET version.json</text>
+                <g class="edge-seq" data-seq-for="update-get" hidden>
+                  <circle cx="384" cy="378" r="10" class="seq-circle"/>
+                  <text x="384" y="382" text-anchor="middle" class="seq-text"></text>
+                </g>
+              </g>
+
+              <!-- 6. Horizontal: Dev CLI -> Static Host (violet) -->
+              <g class="svg-edge edge-violet" data-edge="upload-signed">
+                <path d="M 860 432 L 736 432" class="edge-path" marker-end="url(#arrow-violet)"/>
+                <path d="M 860 432 L 736 432" class="edge-pulse"/>
+                <rect x="740" y="402" width="112" height="22" rx="4" class="edge-pill-bg"/>
+                <text x="796" y="417" text-anchor="middle" class="edge-label">upload signed</text>
+                <g class="edge-seq" data-seq-for="upload-signed" hidden>
+                  <circle cx="796" cy="450" r="10" class="seq-circle"/>
+                  <text x="796" y="454" text-anchor="middle" class="seq-text"></text>
+                </g>
+              </g>
+
+              <!-- 7. Vertical bidirectional: Mac App <-> Keychain (green) -->
+              <g class="svg-edge edge-green" data-edge="keychain-seal">
+                <path d="M 168 322 L 168 378" class="edge-path" marker-start="url(#arrow-green)" marker-end="url(#arrow-green)"/>
+                <path d="M 168 322 L 168 378" class="edge-pulse"/>
+                <rect x="94" y="339" width="148" height="22" rx="4" class="edge-pill-bg"/>
+                <text x="168" y="354" text-anchor="middle" class="edge-label">vault seal / read</text>
+                <g class="edge-seq" data-seq-for="keychain-seal" hidden>
+                  <circle cx="80" cy="350" r="10" class="seq-circle"/>
+                  <text x="80" y="354" text-anchor="middle" class="seq-text"></text>
+                </g>
+              </g>
+
+              <!-- NODES (6 interactive boxes) -->
+              <!-- Node 1: Mac App (SeatStamp) -->
+              <g class="svg-node node-green" data-node="mac-app" tabindex="0" role="button" aria-label="Mac App (SeatStamp): inspect secrets, storage, and safety rules">
+                <rect x="36" y="118" width="264" height="200" rx="10" class="node-bg"/>
+                <rect x="36" y="118" width="264" height="4" rx="2" class="node-accent"/>
+                <text x="48" y="144" class="node-title">Mac App (SeatStamp)</text>
+                <text x="48" y="164" class="node-sub">2 embedded Ed25519 public keys</text>
+                <rect x="48" y="178" width="240" height="28" rx="6" class="pill-green-bg"/>
+                <text x="56" y="196" class="pill-green-text">Launch: Ed25519 check (0 network)</text>
+                <rect x="48" y="214" width="240" height="28" rx="6" class="pill-neutral-bg"/>
+                <text x="56" y="232" class="pill-neutral-text">Trial: 4-anchor monotonic clock</text>
+                <text x="48" y="268" class="node-line">Verifies updates + Gatekeeper quarantine</text>
+                <text x="48" y="300" class="node-inspect">Inspect component ›</text>
+              </g>
+
+              <!-- Node 2: Local Vault -->
+              <g class="svg-node node-green" data-node="keychain" tabindex="0" role="button" aria-label="Local Vault: inspect secrets, storage, and safety rules">
+                <rect x="36" y="382" width="264" height="146" rx="10" class="node-bg"/>
+                <rect x="36" y="382" width="264" height="4" rx="2" class="node-accent"/>
+                <text x="48" y="408" class="node-title">Local Vault</text>
+                <text x="48" y="434" class="node-line">Signed LK1- ticket + cs_live_... key</text>
+                <text x="48" y="456" class="node-line">seat code + revokedBefore floor</text>
+                <rect x="48" y="470" width="188" height="22" rx="5" class="pill-neutral-bg"/>
+                <text x="56" y="485" class="pill-neutral-text">4-anchor trial timestamps</text>
+                <text x="48" y="512" class="node-inspect">Inspect component ›</text>
+              </g>
+
+              <!-- Node 3: Cloudflare Worker + DO -->
+              <g class="svg-node node-blue" data-node="worker" tabindex="0" role="button" aria-label="Cloudflare Worker + DO: inspect secrets, storage, and safety rules">
+                <rect x="468" y="118" width="264" height="200" rx="10" class="node-bg"/>
+                <rect x="468" y="118" width="264" height="4" rx="2" class="node-accent"/>
+                <text x="484" y="144" class="node-title">Cloudflare Worker + DO</text>
+                <text x="484" y="170" class="node-line">Holds Ed25519 license secret</text>
+                <text x="484" y="192" class="node-line">One SQLite record per hashed key</text>
+                <text x="484" y="214" class="node-line">Seat cap + yearly move budget</text>
+                <rect x="484" y="232" width="194" height="26" rx="6" class="pill-blue-bg"/>
+                <text x="494" y="249" class="pill-blue-text">Zero emails or IPs stored</text>
+                <text x="484" y="300" class="node-inspect">Inspect component ›</text>
+              </g>
+
+              <!-- Node 4: Static Host / CDN -->
+              <g class="svg-node node-violet" data-node="cdn" tabindex="0" role="button" aria-label="Static Host / CDN: inspect secrets, storage, and safety rules">
+                <rect x="468" y="346" width="264" height="182" rx="10" class="node-bg"/>
+                <rect x="468" y="346" width="264" height="4" rx="2" class="node-accent"/>
+                <text x="484" y="372" class="node-title">Static Host / CDN</text>
+                <text x="484" y="398" class="node-line">Serves version.json + App.dmg</text>
+                <text x="484" y="420" class="node-line">Signed sha256, size &amp; seq</text>
+                <text x="484" y="442" class="node-line">Optional revoked_tags list</text>
+                <rect x="484" y="458" width="212" height="26" rx="6" class="pill-violet-bg"/>
+                <text x="494" y="475" class="pill-violet-text">Plain files · zero server runtime</text>
+                <text x="484" y="512" class="node-inspect">Inspect component ›</text>
+              </g>
+
+              <!-- Node 5: Stripe (+ Resend) -->
+              <g class="svg-node node-amber" data-node="stripe" tabindex="0" role="button" aria-label="Stripe (+ Resend): inspect secrets, storage, and safety rules">
+                <rect x="860" y="118" width="264" height="200" rx="10" class="node-bg"/>
+                <rect x="860" y="118" width="264" height="4" rx="2" class="node-accent"/>
+                <text x="876" y="144" class="node-title">Stripe (+ Resend)</text>
+                <text x="876" y="170" class="node-line">cs_live_... = license key</text>
+                <text x="876" y="192" class="node-line">Pulled on demand (0 webhooks)</text>
+                <text x="876" y="214" class="node-line">Checks refund + dispute status</text>
+                <rect x="876" y="232" width="206" height="26" rx="6" class="pill-amber-bg"/>
+                <text x="886" y="249" class="pill-amber-text">Optional 1x backup key email</text>
+                <text x="876" y="300" class="node-inspect">Inspect component ›</text>
+              </g>
+
+              <!-- Node 6: Dev CLI (license-tool) -->
+              <g class="svg-node node-slate" data-node="cli" tabindex="0" role="button" aria-label="Dev CLI (license-tool): inspect secrets, storage, and safety rules">
+                <rect x="860" y="346" width="264" height="182" rx="10" class="node-bg"/>
+                <rect x="860" y="346" width="264" height="4" rx="2" class="node-accent"/>
+                <text x="876" y="372" class="node-title">Dev CLI (license-tool)</text>
+                <text x="876" y="398" class="node-line">Offline on developer's Mac</text>
+                <text x="876" y="420" class="node-line">Holds the update signing key</text>
+                <text x="876" y="442" class="node-line">--artifact signs .dmg hash</text>
+                <text x="876" y="464" class="node-line">--revoke-key / --rotate-keypair</text>
+                <text x="876" y="512" class="node-inspect">Inspect component ›</text>
+              </g>
+            </svg>
+          </div>
+
+          <!-- Mobile Stacked Card Diagram (< 768px) -->
+          <div class="diagram-mobile" aria-label="Mobile architecture diagram">
+            <div class="mobile-zone" data-node="zone-mac">
+              <div class="mobile-zone-title">USER'S MAC (OFFLINE TRUST ZONE)</div>
+
+              <button type="button" class="mobile-node node-green" data-node="mac-app">
+                <div class="mobile-node-head">
+                  <strong>Mac App (SeatStamp)</strong>
+                  <span class="mobile-inspect">Inspect ›</span>
+                </div>
+                <div class="mobile-node-sub">2 embedded Ed25519 public keys</div>
+                <div class="mobile-pill pill-green">Launch: Ed25519 check (0 network)</div>
+                <div class="mobile-pill pill-neutral">Trial: 4-anchor monotonic clock</div>
+                <div class="mobile-node-line">Verifies updates + Gatekeeper quarantine</div>
+              </button>
+
+              <div class="mobile-connector" data-edge="keychain-seal">↕ vault seal / read</div>
+
+              <button type="button" class="mobile-node node-green" data-node="keychain">
+                <div class="mobile-node-head">
+                  <strong>Local Vault</strong>
+                  <span class="mobile-inspect">Inspect ›</span>
+                </div>
+                <div class="mobile-node-line">Signed LK1- ticket + cs_live_... key</div>
+                <div class="mobile-node-line">seat code + revokedBefore floor</div>
+              </button>
+            </div>
+
+            <div class="mobile-boundary">NETWORK BOUNDARY</div>
+
+            <div class="mobile-connectors-group">
+              <div class="mobile-connector" data-edge="checkout">↗ Browser checkout with chk_ token</div>
+              <div class="mobile-connector" data-edge="claim">→ claim / activate / free</div>
+              <div class="mobile-connector" data-edge="ticket">← signed LK1- ticket</div>
+            </div>
+
+            <button type="button" class="mobile-node node-blue" data-node="worker">
+              <div class="mobile-node-head">
+                <strong>Cloudflare Worker + DO</strong>
+                <span class="mobile-inspect">Inspect ›</span>
+              </div>
+              <div class="mobile-node-line">Holds Ed25519 license secret</div>
+              <div class="mobile-node-line">One SQLite record per hashed key</div>
+              <div class="mobile-node-line">Seat cap + yearly move budget</div>
+              <div class="mobile-pill pill-blue">Zero emails or IPs stored</div>
+            </button>
+
+            <div class="mobile-connector" data-edge="stripe-check">↕ GET paid? / no dispute</div>
+
+            <button type="button" class="mobile-node node-amber" data-node="stripe">
+              <div class="mobile-node-head">
+                <strong>Stripe (+ Resend)</strong>
+                <span class="mobile-inspect">Inspect ›</span>
+              </div>
+              <div class="mobile-node-line">cs_live_... = license key</div>
+              <div class="mobile-node-line">Pulled on demand (0 webhooks)</div>
+              <div class="mobile-node-line">Checks refund + dispute status</div>
+              <div class="mobile-pill pill-amber">Optional 1x backup key email</div>
+            </button>
+
+            <div class="mobile-connector" data-edge="update-get">↑ weekly GET version.json</div>
+
+            <button type="button" class="mobile-node node-violet" data-node="cdn">
+              <div class="mobile-node-head">
+                <strong>Static Host / CDN</strong>
+                <span class="mobile-inspect">Inspect ›</span>
+              </div>
+              <div class="mobile-node-line">Serves version.json + App.dmg</div>
+              <div class="mobile-node-line">Signed sha256, size &amp; seq</div>
+              <div class="mobile-node-line">Optional revoked_tags list</div>
+              <div class="mobile-pill pill-violet">Plain files · zero server runtime</div>
+            </button>
+
+            <div class="mobile-connector" data-edge="upload-signed">↑ upload signed</div>
+
+            <button type="button" class="mobile-node node-slate" data-node="cli">
+              <div class="mobile-node-head">
+                <strong>Dev CLI (license-tool)</strong>
+                <span class="mobile-inspect">Inspect ›</span>
+              </div>
+              <div class="mobile-node-line">Offline on developer's Mac</div>
+              <div class="mobile-node-line">Holds the update signing key</div>
+              <div class="mobile-node-line">--artifact signs .dmg hash</div>
+              <div class="mobile-node-line">--revoke-key / --rotate-keypair</div>
+            </button>
+          </div>
+
+          <!-- 2.3 Dynamic 3-Step Strip Below the Diagram (syncs on hover with diagram) -->
+          <div id="flow-steps" class="flow-steps" aria-live="polite"></div>
+
+          <!-- 2.4 Interactive Node Detail Drawer -->
+          <aside id="node-drawer" class="node-drawer" hidden aria-live="polite">
+            <div class="drawer-head">
+              <div>
+                <span class="drawer-kicker">Component Inspector</span>
+                <h3 id="drawer-title" class="drawer-title">Mac App (SeatStamp)</h3>
+                <p id="drawer-plain" class="drawer-plain"></p>
+              </div>
+              <div class="drawer-actions">
+                <button type="button" id="drawer-prev" class="btn btn-secondary btn-sm" aria-label="Previous component">Prev</button>
+                <button type="button" id="drawer-next" class="btn btn-secondary btn-sm" aria-label="Next component">Next</button>
+                <button type="button" id="drawer-close" class="btn btn-secondary btn-sm">Close</button>
+              </div>
+            </div>
+            <dl class="drawer-grid">
+              <div class="drawer-row">
+                <dt>Secrets Held</dt>
+                <dd id="drawer-secrets"></dd>
+              </div>
+              <div class="drawer-row">
+                <dt>Data Stored</dt>
+                <dd id="drawer-storage"></dd>
+              </div>
+              <div class="drawer-row">
+                <dt>Failure / Safety Rule</dt>
+                <dd id="drawer-safety"></dd>
+              </div>
+            </dl>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Interactive Artifact Inspector + Live Tamper Simulator -->
+    <section id="inspector" class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Real Signatures</p>
+            <h2 class="section-title">Inspect a signed ticket and update manifest</h2>
+          </div>
+          <p class="section-desc">
+            These are real test vectors from <code>fixtures/golden-vectors.json</code>, the same ones the Swift and Worker tests use. Every check below runs in your browser with WebCrypto Ed25519, with no server involved.
+          </p>
+        </div>
+
+        <div class="inspector-shell">
+          <div class="inspector-tabs" role="tablist" aria-label="Artifact type">
+            <button type="button" role="tab" class="inspector-tab" id="insp-tab-ticket" data-artifact="ticket" aria-selected="true" aria-controls="insp-panel-ticket">License Ticket (LK1-)</button>
+            <button type="button" role="tab" class="inspector-tab" id="insp-tab-manifest" data-artifact="manifest" aria-selected="false" aria-controls="insp-panel-manifest">Update Manifest (version.json)</button>
+          </div>
+
+          <!-- Tab A: LK1- ticket -->
+          <div id="insp-panel-ticket" role="tabpanel" aria-labelledby="insp-tab-ticket" class="inspector-body">
+            <div class="inspector-code-col">
+              <div class="sim-bar" role="group" aria-label="Try an attack on the ticket">
+                <span class="sim-label">Try:</span>
+                <button type="button" class="sim-btn is-active" data-sim-group="ticket" data-sim-mode="valid">Valid ticket</button>
+                <button type="button" class="sim-btn" data-sim-group="ticket" data-sim-mode="tamper">Edit the seat code</button>
+                <button type="button" class="sim-btn" data-sim-group="ticket" data-sim-mode="copy">Copy to another Mac</button>
+                <button type="button" class="sim-btn" data-sim-group="ticket" data-sim-mode="replay">Paste back after Deactivate</button>
+              </div>
+              <div class="sim-status is-ok" id="ticket-sim-status" aria-live="polite">
+                <strong>Checking...</strong>
+              </div>
+
+              <div class="token-strip" aria-label="LK1 ticket structure">
+                <button type="button" class="token-seg token-scheme is-active" data-field="prefix">LK1</button><span class="token-dot">-</span><button type="button" class="token-seg token-payload" data-field="payload" id="ticket-token-payload"></button><span class="token-dot">.</span><button type="button" class="token-seg token-sig" data-field="signature" id="ticket-token-sig"></button>
+              </div>
+              <pre class="code-json"><code><span class="code-comment">// payload, decoded from base64url: four fields joined by "|"</span>
+<button type="button" class="json-field" data-field="scheme" id="ticket-field-scheme"></button> | <button type="button" class="json-field" data-field="order_tag" id="ticket-field-tag"></button> | <button type="button" class="json-field" data-field="issued" id="ticket-field-issued"></button> | <button type="button" class="json-field" data-field="seat" id="ticket-field-seat"></button>
+<span class="code-comment">// checked by this Mac</span>
+<span id="ticket-mac-context"></span></code></pre>
+            </div>
+            <div class="inspector-explain-col">
+              <div class="explain-card" id="ticket-explain">
+                <div class="explain-kicker">What it guarantees</div>
+                <h3 class="explain-title" id="ticket-explain-title"></h3>
+                <p class="explain-text" id="ticket-explain-text"></p>
+              </div>
+              <div class="field-pills">
+                <button type="button" class="field-chip is-active" data-artifact-target="ticket" data-field="prefix">prefix</button>
+                <button type="button" class="field-chip" data-artifact-target="ticket" data-field="scheme">scheme</button>
+                <button type="button" class="field-chip" data-artifact-target="ticket" data-field="order_tag">order tag</button>
+                <button type="button" class="field-chip" data-artifact-target="ticket" data-field="issued">issued</button>
+                <button type="button" class="field-chip" data-artifact-target="ticket" data-field="seat">seat</button>
+                <button type="button" class="field-chip" data-artifact-target="ticket" data-field="signature">signature</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab B: version.json -->
+          <div id="insp-panel-manifest" role="tabpanel" aria-labelledby="insp-tab-manifest" class="inspector-body" hidden>
+            <div class="inspector-code-col">
+              <div class="sim-bar" role="group" aria-label="Try an attack on the update manifest">
+                <span class="sim-label">Try:</span>
+                <button type="button" class="sim-btn is-active" data-sim-group="manifest" data-sim-mode="valid">Valid release</button>
+                <button type="button" class="sim-btn" data-sim-group="manifest" data-sim-mode="url">Point the URL elsewhere</button>
+                <button type="button" class="sim-btn" data-sim-group="manifest" data-sim-mode="swap">Swap the .dmg</button>
+                <button type="button" class="sim-btn" data-sim-group="manifest" data-sim-mode="downgrade">Serve an older manifest</button>
+              </div>
+              <div class="sim-status is-ok" id="manifest-sim-status" aria-live="polite">
+                <strong>Checking...</strong>
+              </div>
+
+              <pre class="code-json"><code>{
+  <button type="button" class="json-field" data-field="version" id="manifest-field-version"></button>,
+  <button type="button" class="json-field" data-field="url" id="manifest-field-url"></button>,
+  <button type="button" class="json-field" data-field="summary" id="manifest-field-summary"></button>,
+  <button type="button" class="json-field" data-field="notes" id="manifest-field-notes"></button>,
+  <button type="button" class="json-field" data-field="revoked_tags" id="manifest-field-revoked"></button>,
+  <button type="button" class="json-field is-active" data-field="sha256" id="manifest-field-sha256"></button>,
+  <button type="button" class="json-field" data-field="size" id="manifest-field-size"></button>,
+  <button type="button" class="json-field" data-field="manifest_seq" id="manifest-field-seq"></button>,
+  <button type="button" class="json-field" data-field="sig" id="manifest-field-sig"></button>
+}</code></pre>
+            </div>
+            <div class="inspector-explain-col">
+              <div class="explain-card" id="manifest-explain">
+                <div class="explain-kicker">What it guarantees</div>
+                <h3 class="explain-title" id="manifest-explain-title"></h3>
+                <p class="explain-text" id="manifest-explain-text"></p>
+              </div>
+              <div class="field-pills">
+                <button type="button" class="field-chip" data-artifact-target="manifest" data-field="url">url</button>
+                <button type="button" class="field-chip is-active" data-artifact-target="manifest" data-field="sha256">sha256</button>
+                <button type="button" class="field-chip" data-artifact-target="manifest" data-field="size">size</button>
+                <button type="button" class="field-chip" data-artifact-target="manifest" data-field="manifest_seq">manifest_seq</button>
+                <button type="button" class="field-chip" data-artifact-target="manifest" data-field="revoked_tags">revoked_tags</button>
+                <button type="button" class="field-chip" data-artifact-target="manifest" data-field="sig">sig</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: 5-Step Developer Setup Switcher -->
+    <section id="setup" class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Quickstart</p>
+            <h2 class="section-title">5-step developer setup</h2>
+          </div>
+          <p class="section-desc">
+            About 30 minutes · $0 a month on Cloudflare's free plan · only Stripe's standard fee per sale.
+          </p>
+        </div>
+
+        <div class="setup-shell">
+          <div class="setup-steps" role="tablist" aria-label="Developer setup steps">
+            <button type="button" role="tab" class="setup-step-btn" id="setup-tab-1" data-step="1" aria-selected="true" aria-controls="setup-panel-1">
+              <span class="step-num">01</span>
+              <span class="step-label">Create keys</span>
+            </button>
+            <button type="button" role="tab" class="setup-step-btn" id="setup-tab-2" data-step="2" aria-selected="false" aria-controls="setup-panel-2">
+              <span class="step-num">02</span>
+              <span class="step-label">Set up Stripe</span>
+            </button>
+            <button type="button" role="tab" class="setup-step-btn" id="setup-tab-3" data-step="3" aria-selected="false" aria-controls="setup-panel-3">
+              <span class="step-num">03</span>
+              <span class="step-label">Deploy the Worker</span>
+            </button>
+            <button type="button" role="tab" class="setup-step-btn" id="setup-tab-4" data-step="4" aria-selected="false" aria-controls="setup-panel-4">
+              <span class="step-num">04</span>
+              <span class="step-label">Add SeatStamp to your app</span>
+            </button>
+            <button type="button" role="tab" class="setup-step-btn" id="setup-tab-5" data-step="5" aria-selected="false" aria-controls="setup-panel-5">
+              <span class="step-num">05</span>
+              <span class="step-label">Sign releases</span>
+            </button>
+          </div>
+
+          <div class="setup-panels">
+            <div id="setup-panel-1" role="tabpanel" aria-labelledby="setup-tab-1" class="setup-panel">
+              <div class="setup-panel-head">
+                <h3>1. Create two Ed25519 keypairs</h3>
+                <p>The license private key becomes a Worker secret. The update private key never leaves your Mac. Only the two public keys ship inside your app.</p>
+              </div>
+              <div class="code-block">
+                <div class="code-toolbar">
+                  <span class="code-lang">zsh</span>
+                  <button type="button" class="copy-btn" data-copy-target="code-step-1">Copy</button>
+                </div>
+                <pre id="code-step-1"><code>swift run license-tool --scheme MYAPP-V1 --init-keypair
+swift run license-tool --scheme MYAPP-V1 --init-update-keypair</code></pre>
+              </div>
+              <div class="setup-panel-foot">
+                <span></span>
+                <button type="button" class="btn btn-secondary btn-sm setup-nav-btn" data-goto-step="2">Next: Restricted Stripe key ›</button>
+              </div>
+            </div>
+
+            <div id="setup-panel-2" role="tabpanel" aria-labelledby="setup-tab-2" class="setup-panel" hidden>
+              <div class="setup-panel-head">
+                <h3>2. Create a Payment Link and a restricted Stripe key</h3>
+                <p>No webhooks. Point the Payment Link's redirect at <code>https://activate.myapp.com/thank-you?session_id={CHECKOUT_SESSION_ID}</code>, then create a restricted key (<code>rk_live_...</code>) with these 4 read-only permissions:</p>
+              </div>
+              <div class="code-block">
+                <div class="code-toolbar">
+                  <span class="code-lang">Stripe Restricted Key Scopes</span>
+                  <button type="button" class="copy-btn" data-copy-target="code-step-2">Copy</button>
+                </div>
+                <pre id="code-step-2"><code>Checkout Sessions : Read
+PaymentIntents    : Read
+Charges           : Read
+Disputes          : Read</code></pre>
+              </div>
+              <div class="setup-panel-foot">
+                <button type="button" class="btn btn-secondary btn-sm setup-nav-btn" data-goto-step="1">‹ Prev</button>
+                <button type="button" class="btn btn-secondary btn-sm setup-nav-btn" data-goto-step="3">Next: Deploy Worker ›</button>
+              </div>
+            </div>
+
+            <div id="setup-panel-3" role="tabpanel" aria-labelledby="setup-tab-3" class="setup-panel" hidden>
+              <div class="setup-panel-head">
+                <h3>3. Deploy the Cloudflare Worker</h3>
+                <p>One Worker and one SQLite Durable Object, on the free plan. Set <code>TICKET_SCHEME</code>, <code>APP_NAME</code> and <code>APP_URL_SCHEME</code> in <code>worker/wrangler.jsonc</code> first.</p>
+              </div>
+              <div class="code-block">
+                <div class="code-toolbar">
+                  <span class="code-lang">zsh</span>
+                  <button type="button" class="copy-btn" data-copy-target="code-step-3">Copy</button>
+                </div>
+                <pre id="code-step-3"><code>npx wrangler -c worker/wrangler.jsonc deploy
+npx wrangler -c worker/wrangler.jsonc secret put ED25519_PKCS8_B64
+npx wrangler -c worker/wrangler.jsonc secret put STRIPE_SECRET_KEY
+npx wrangler -c worker/wrangler.jsonc secret put STRIPE_ALLOWED_PAYMENT_LINKS</code></pre>
+              </div>
+              <div class="setup-panel-foot">
+                <button type="button" class="btn btn-secondary btn-sm setup-nav-btn" data-goto-step="2">‹ Prev</button>
+                <button type="button" class="btn btn-secondary btn-sm setup-nav-btn" data-goto-step="4">Next: Swift Integration ›</button>
+              </div>
+            </div>
+
+            <div id="setup-panel-4" role="tabpanel" aria-labelledby="setup-tab-4" class="setup-panel" hidden>
+              <div class="setup-panel-head">
+                <h3>4. Add SeatStamp to your app and handle every outcome</h3>
+                <p>Paste in the two public keys, gate paid features with <code>verifyGateAccess()</code>, and handle each <code>ActivationOutcome</code> so a pending payment or a wrong clock gets a clear message.</p>
+              </div>
+              <div class="code-block">
+                <div class="code-toolbar">
+                  <span class="code-lang">Swift</span>
+                  <button type="button" class="copy-btn" data-copy-target="code-step-4">Copy</button>
+                </div>
+                <pre id="code-step-4"><code>import SeatStamp
+
+let kit = SeatStampManager(
+    scheme: "MYAPP-V1",
+    licensePublicKeyBase64: "&lt;LICENSE_PUBLIC_KEY&gt;",
+    updatePublicKeyBase64: "&lt;UPDATE_PUBLIC_KEY&gt;",
+    activationEndpoints: [URL(string: "https://activate.myapp.com")!],
+    trialLengthDays: 30,
+    maxSeats: 2,
+    bundleID: "com.example.myapp"
+)
+
+switch await kit.activate(key: pastedKey) {
+case .activated:        showStatus("Unlocked. Thank you!")
+case .paymentPending:   showStatus("Your payment is still clearing.")
+case .seatLimitReached: showStatus("All Macs are in use. Deactivate one first.")
+case .invalidKey:       showStatus("That key wasn't recognized, or was refunded.")
+case .clockSkew:        showStatus("Your Mac's clock is off. Turn on automatic time.")
+case .networkError:     showStatus("Couldn't reach the server. Try again.")
+case .unconfigured:     showStatus("This build has no activation server.")
+}</code></pre>
+              </div>
+              <div class="setup-panel-foot">
+                <button type="button" class="btn btn-secondary btn-sm setup-nav-btn" data-goto-step="3">‹ Prev</button>
+                <button type="button" class="btn btn-secondary btn-sm setup-nav-btn" data-goto-step="5">Next: Sign Updates ›</button>
+              </div>
+            </div>
+
+            <div id="setup-panel-5" role="tabpanel" aria-labelledby="setup-tab-5" class="setup-panel" hidden>
+              <div class="setup-panel-head">
+                <h3>5. Sign each release on your own Mac</h3>
+                <p><code>license-tool</code> signs the version, the download URL, and the file's SHA-256 and size with your offline update key. Upload <code>version.json</code> and the <code>.dmg</code> to any static host.</p>
+              </div>
+              <div class="code-block">
+                <div class="code-toolbar">
+                  <span class="code-lang">zsh</span>
+                  <button type="button" class="copy-btn" data-copy-target="code-step-5">Copy</button>
+                </div>
+                <pre id="code-step-5"><code>swift run license-tool --scheme MYAPP-V1 \
+  --sign-manifest version.json \
+  --artifact MyApp-1.2.dmg</code></pre>
+              </div>
+              <div class="setup-panel-foot">
+                <button type="button" class="btn btn-secondary btn-sm setup-nav-btn" data-goto-step="4">‹ Prev</button>
+                <span class="setup-done-note">Ready to ship.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: Honest Security, Logic & Privacy Matrix -->
+    <section id="security" class="section">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Engineering Honesty</p>
+            <h2 class="section-title">Security guarantees, non-goals &amp; privacy</h2>
+          </div>
+          <p class="section-desc">
+            What SeatStamp enforces, and what no offline desktop software can prevent.
+          </p>
+        </div>
+
+        <div class="matrix-grid">
+          <article class="matrix-card">
+            <h3 class="matrix-title">Enforced by crypto &amp; edge</h3>
+            <ul class="matrix-list">
+              <li>Offline Ed25519 ticket and update verification (<code>sha256</code> + <code>size</code> + <code>manifest_seq</code> + Gatekeeper quarantine).</li>
+              <li>A browser checkout handoff (<code>chk_</code>) is bound to the first Mac that polls for it.</li>
+              <li>Monotonic 4-anchor local trial clock (blocks macOS system clock rollback).</li>
+              <li>Yearly seat-move budget (<code>SEAT_RELEASES_PER_YEAR</code>) and a local <code>revokedBefore</code> floor that rejects tickets pasted back after Deactivate.</li>
+              <li>Stripe errors, pending payments, and won disputes never wipe a valid buyer's seats.</li>
+            </ul>
+          </article>
+
+          <article class="matrix-card">
+            <h3 class="matrix-title">Explicit offline non-goals</h3>
+            <ul class="matrix-list">
+              <li>Patching your compiled app on the buyer's own Mac skips local checks. This is true of every offline Mac app.</li>
+              <li>Deleting all 4 local trial anchors (one of them in the Keychain) at once, or using a fresh macOS user, restarts the trial.</li>
+              <li>Remotely disabling a refunded copy that never checks for updates, because unlocked Macs never phone home.</li>
+            </ul>
+          </article>
+
+          <article class="matrix-card">
+            <h3 class="matrix-title">Accurate privacy posture</h3>
+            <ul class="matrix-list">
+              <li>Worker SQLite stores <strong>zero emails and zero IP addresses</strong>; records are keyed by a hash of the purchase key.</li>
+              <li>Inactive seat rows auto-purge after 30 days, and <code>--erase-key</code> deletes an order record on request.</li>
+              <li>Stripe (payment processor) and optional Resend (backup email sender) process buyer data under their own policies.</li>
+              <li>Copy an accurate disclosure from <a href="https://github.com/denissitnikov/seatstamp/blob/main/docs/privacy.md" target="_blank" rel="noopener noreferrer"><code>docs/privacy.md</code></a>.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p class="footer-note">
+        <strong>SeatStamp</strong> is MIT licensed. Built for <a href="https://slidetab.app" target="_blank" rel="noopener noreferrer">SlideTab</a>, a Mac app sold with it.
+      </p>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="https://github.com/denissitnikov/seatstamp" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+        <a href="https://github.com/denissitnikov/seatstamp/blob/main/docs/integrating.md" target="_blank" rel="noopener noreferrer">Integration Guide (docs/integrating.md)</a>
+        <a href="https://github.com/denissitnikov/seatstamp/blob/main/docs/privacy.md" target="_blank" rel="noopener noreferrer">Privacy Template (docs/privacy.md)</a>
+        <a href="https://github.com/denissitnikov/seatstamp/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

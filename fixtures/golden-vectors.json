@@ -1,0 +1,90 @@
+{
+  "_comment": "Deterministic cross-language test vectors (sequential bytes 0x00..0x1f and 0x20..0x3f). DO NOT use these test keys in production.",
+  "licenseTestKey": {
+    "seedHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "pkcs8Base64": "MC4CAQAwBQYDK2VwBCIEIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f",
+    "publicKeyBase64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg="
+  },
+  "updateTestKey": {
+    "seedHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    "pkcs8Base64": "MC4CAQAwBQYDK2VwBCIEICAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/",
+    "publicKeyBase64": "Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc="
+  },
+  "hardwareDerivation": {
+    "hardwareUUID": "11111111-2222-3333-4444-555555555555",
+    "seatDomain": "com.example.acme.seat.v1|",
+    "expectedSeatCode": "b3d8d5e073a07524",
+    "trialSealDomain": "com.example.acme.trial-seal.v1|",
+    "first": 1760000000,
+    "high": 1760100000,
+    "revokedBefore": 1760050000,
+    "expectedSeal": "TV2|1760000000|1760100000|1760050000|6FpECBLwaSB0M6-LsANMCodzKimBRsxLenhgwsZv0Co"
+  },
+  "orderTagDerivation": {
+    "domain": "seatstamp-key-v1|",
+    "purchaseKey": "cs_live_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    "expectedKeyHash": "86b6cc27d457342d9d24d043bd044ff123e49f279c1f6f915a2f1d31677c9304",
+    "expectedOrderTag": "ORD-86B6CC27D457342D"
+  },
+  "ticket": {
+    "prefix": "LK1-",
+    "scheme": "ACME-V1",
+    "tag": "ORD-42A9F01C",
+    "issued": 1760000000,
+    "seat": "b3d8d5e073a07524",
+    "canonicalPayload": "ACME-V1|ORD-42A9F01C|1760000000|b3d8d5e073a07524",
+    "encoded": "LK1-QUNNRS1WMXxPUkQtNDJBOUYwMUN8MTc2MDAwMDAwMHxiM2Q4ZDVlMDczYTA3NTI0.Nho8x7JiASeN3aPAvuc5rZ761jatIEfTvB3nWIFl-j3_gCQ6wGWshBQ2TilM-vngtaz05sTwA9fEilDql0FeBA"
+  },
+  "manifest": {
+    "scheme": "ACME-UPDATE-V1",
+    "version": "1.2",
+    "url": "https://acme.example/download/Acme-1.2.dmg",
+    "summary": "Sum",
+    "notes": ["a", "bé"],
+    "summaryI18n": { "ja": "要約", "de": "Zsf" },
+    "notesI18n": { "de": ["x"] },
+    "canonicalUTF8": "ACME-UPDATE-V1\n3:1.2\n42:https://acme.example/download/Acme-1.2.dmg\n3:Sum\nnotes[2]\n1:a\n3:bé\nsummary_i18n[2]\n2:de\n3:Zsf\n2:ja\n6:要約\nnotes_i18n[1]\n2:de\nitems[1]\n1:x\n",
+    "signatureBase64URL": "qqknbPEQ4Foeq5yemi3sCPEvgpPjyxvAIIN-83imqf2WiGkCK2usuR7gztmFo3B9dynzik0en5QYk8yqIvo5CQ"
+  },
+  "manifestWithRevokedTags": {
+    "scheme": "ACME-UPDATE-V1",
+    "version": "1.2.1",
+    "url": "https://acme.example/download/Acme-1.2.1.dmg",
+    "summary": "Security update",
+    "notes": ["Revoke refunded order"],
+    "summaryI18n": {},
+    "notesI18n": {},
+    "revokedTags": ["ORD-0011223344556677", "ORD-42A9F01C"],
+    "canonicalUTF8": "ACME-UPDATE-V1\n5:1.2.1\n44:https://acme.example/download/Acme-1.2.1.dmg\n15:Security update\nnotes[1]\n21:Revoke refunded order\nsummary_i18n[0]\nnotes_i18n[0]\nrevoked_tags[2]\n20:ORD-0011223344556677\n12:ORD-42A9F01C\n",
+    "signatureBase64URL": "h-UdqiivW55bs8m5KrfhWQWZaGfFaHyuzWmeFHkIvE5jPYDAlTB8nUrOMXVnzmIacISqoSrKzRWqCX3aR3ZvCw"
+  },
+  "manifestWithArtifact": {
+    "scheme": "ACME-UPDATE-V1",
+    "version": "2.0.0",
+    "url": "https://acme.example/download/Acme-2.0.0.dmg",
+    "summary": "Signed artifact",
+    "notes": ["Hash bound"],
+    "summaryI18n": {},
+    "notesI18n": {},
+    "revokedTags": ["ORD-42A9F01C"],
+    "sha256": "53427912b4b3398167ababe6583b6c45fc07f47fcefb8d57da660df0d5a94e16",
+    "size": 34,
+    "canonicalUTF8": "ACME-UPDATE-V1\n5:2.0.0\n44:https://acme.example/download/Acme-2.0.0.dmg\n15:Signed artifact\nnotes[1]\n10:Hash bound\nsummary_i18n[0]\nnotes_i18n[0]\nrevoked_tags[1]\n12:ORD-42A9F01C\nartifact_sha256[1]\n64:53427912b4b3398167ababe6583b6c45fc07f47fcefb8d57da660df0d5a94e16\nartifact_size[1]\n2:34\n",
+    "signatureBase64URL": "xjpLNjojX7Gn1d0LflatQOQblFdfbffw0mtCXSnN4rmrkEwhChvXheGRYGl0otsW_BNfbnBVevZH9ReZygpkBw"
+  },
+  "manifestWithSequence": {
+    "scheme": "ACME-UPDATE-V1",
+    "version": "2.0.1",
+    "url": "https://acme.example/download/Acme-2.0.1.dmg",
+    "summary": "Sequenced manifest",
+    "notes": ["Seq bound"],
+    "summaryI18n": {},
+    "notesI18n": {},
+    "revokedTags": [],
+    "sha256": "53427912b4b3398167ababe6583b6c45fc07f47fcefb8d57da660df0d5a94e16",
+    "size": 34,
+    "manifestSeq": 1760000000,
+    "canonicalUTF8": "ACME-UPDATE-V1\n5:2.0.1\n44:https://acme.example/download/Acme-2.0.1.dmg\n18:Sequenced manifest\nnotes[1]\n9:Seq bound\nsummary_i18n[0]\nnotes_i18n[0]\nartifact_sha256[1]\n64:53427912b4b3398167ababe6583b6c45fc07f47fcefb8d57da660df0d5a94e16\nartifact_size[1]\n2:34\nmanifest_seq[1]\n10:1760000000\n",
+    "signatureBase64URL": "O8xSCI51vsvIwaWfOpcDQD5b9sdM52S2q3HCEfBTTZNNysJYGiKFMXX0CtOL7AFYQffAqb79vMXCr06yDXfnCA"
+  }
+}

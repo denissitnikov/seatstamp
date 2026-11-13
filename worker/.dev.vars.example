@@ -1,0 +1,39 @@
+# Copy to worker/.dev.vars for local testing with `npx wrangler -c worker/wrangler.jsonc dev`.
+# For production, upload each secret via `npx wrangler -c worker/wrangler.jsonc secret put <NAME>`.
+
+# Base64 PKCS#8 Ed25519 license signing key printed by:
+#   swift run license-tool --scheme MYAPP-V1 --init-keypair
+ED25519_PKCS8_B64="<PASTE_ED25519_PKCS8_B64>"
+
+# Restricted read-only Stripe key (Checkout Sessions, PaymentIntents, Charges, Disputes: Read).
+# Use rk_test_... for Stripe test mode or rk_live_... for live checkouts.
+STRIPE_SECRET_KEY="rk_test_placeholder"
+
+# Optional, strongly recommended: comma-separated Payment Link IDs accepted by this Worker. Unset means every paid one-time session on the account unlocks the app.
+# STRIPE_ALLOWED_PAYMENT_LINKS="plink_placeholder_usd,plink_placeholder_eur"
+
+# Optional, only after `swift run license-tool --scheme MYAPP-V1 --rotate-keypair`: comma-separated Base64
+# 32-byte public keys of retired license keys (first 4 used). Only `deactivate` accepts tickets signed by them.
+# Unset means no retired key is accepted.
+# ED25519_RETIRED_PUB_B64="<OLD_LICENSE_PUBLIC_KEY_B64>"
+
+# Optional: Resend API key for one-time /thank-you backup emails and in-app email key recovery.
+# Also uncomment and set RECEIPT_FROM_EMAIL in worker/wrangler.jsonc.
+# RESEND_API_KEY="re_placeholder"
+
+# Optional: hides seat codes at rest. When set, the Worker stores HMAC-SHA256(SEAT_PEPPER, seat code) instead of
+# the seat code. Unset means seat codes are stored as sent. Never change or remove it once set in production:
+# every active Mac would look like a new Mac and use another seat.
+# SEAT_PEPPER="<RANDOM_SECRET_AT_LEAST_32_CHARACTERS>"
+
+# Optional: admin token, at least 32 random characters, for `swift run license-tool --erase-key`. Pass the same
+# value to license-tool in the SEATSTAMP_ADMIN_TOKEN environment variable, never as an argument.
+# Unset or shorter means the erase action answers 501 erase_unconfigured.
+# ADMIN_TOKEN="<RANDOM_TOKEN_AT_LEAST_32_CHARACTERS>"
+
+# Optional: seat releases (deactivations plus evictions) per purchase per rolling 365 days, 0 to 64.
+# Defaults to MAX_SEATS. Normally set in worker/wrangler.jsonc "vars"; uncomment to override locally.
+# SEAT_RELEASES_PER_YEAR="2"
+
+# POST_RATE_LIMITER is an optional rate-limit binding, not a variable: it cannot be set here.
+# Enable it with the commented "ratelimits" entry in worker/wrangler.jsonc. Unset means per-isolate limits only.

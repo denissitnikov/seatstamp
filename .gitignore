@@ -1,0 +1,26 @@
+# SwiftPM & Xcode
+.build/
+.swiftpm/
+Packages/
+DerivedData/
+xcuserdata/
+*.xcodeproj
+*.xcworkspace
+
+# Node & Cloudflare Wrangler
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+!.env.example
+
+# Never commit private key material
+*.key
+*.pem
+*.pkcs8
+
+# macOS
+.DS_Store
